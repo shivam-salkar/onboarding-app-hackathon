@@ -262,10 +262,10 @@ export default function KycPage() {
     let approved = false;
     let backendData = null;
 
-    // Call the Python backend for real verification if we have all images
+    // Call the TypeScript backend for real verification if we have all images
     if (capturedImage && capturedPanImage && selfieImage) {
       try {
-        const res = await fetch('/api/backend/full-verify', {
+        const res = await fetch('/api/kyc/full-verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -997,14 +997,25 @@ export default function KycPage() {
                     </div>
                   )}
                 </div>
-                <Button
-                  onClick={handleCaptureSelfie}
-                  disabled={!isStreaming || isAnalyzing}
-                  className="w-full"
-                >
-                  <Camera className="w-5 h-5" />
-                  {t('kyc.captureSelfie')}
-                </Button>
+                <div className="w-full flex gap-3">
+                  <Button
+                    onClick={switchCamera}
+                    variant="secondary"
+                    className="min-w-[56px]"
+                    aria-label={t('kyc.switchCamera')}
+                    disabled={!isStreaming || isAnalyzing}
+                  >
+                    <SwitchCamera className="w-5 h-5" />
+                  </Button>
+                  <Button
+                    onClick={handleCaptureSelfie}
+                    disabled={!isStreaming || isAnalyzing}
+                    className="flex-1"
+                  >
+                    <Camera className="w-5 h-5" />
+                    {t('kyc.captureSelfie')}
+                  </Button>
+                </div>
               </>
             ) : (
               <>
