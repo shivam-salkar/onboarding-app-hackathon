@@ -7,12 +7,9 @@ Pillow==11.0.0
 numpy==1.26.4
 opencv-python-headless==4.10.0.84
 
-# OCR — EasyOCR handles Hindi/Marathi + English better than Tesseract
-easyocr==1.7.2
+# GPT-4o Vision for intelligent document OCR (Aadhaar + PAN, any language)
+openai==1.51.0
 
 # Face matching — DeepFace works locally, no API key needed
 deepface==0.0.93
 tf-keras==2.18.0
-
-# Optional: Surepass government PAN/Aadhaar verification (set token in .env)
-# No extra package needed — uses httpx

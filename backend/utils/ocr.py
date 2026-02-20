@@ -1,242 +1,158 @@
 """
-OCR utilities using EasyOCR.
-Handles extraction from Aadhaar and PAN cards.
+Document OCR using GPT-4o Vision.
+Sends the card image to GPT-4o and asks it to extract structured fields.
+Handles Aadhaar, PAN, and any other Indian identity documents in any language.
 """
 import re
 import base64
 import io
-from typing import Optional
+import os
+import json
 from PIL import Image
-import numpy as np
-import easyocr
+from openai import OpenAI
 
-# Lazy-loaded reader to avoid blocking startup
-_reader: Optional[easyocr.Reader] = None
+_client: OpenAI | None = None
+
+AADHAAR_PROMPT = """You are an expert at reading Indian Aadhaar identity cards.
+Extract all text visible on this Aadhaar card and return a JSON object with these fields:
+- doc_type: always "aadhaar"
+- name: Full name as printed (Roman script preferred)
+- aadhaar_number: The 12-digit Aadhaar number (format: "XXXX XXXX XXXX")
+- dob: Date of birth (e.g. "01/01/1990")
+- gender: "male", "female", or "other"
+- address: Full address if visible
+- pincode: 6-digit pin code if visible
+
+Return ONLY a valid JSON object. Use null for missing fields."""
+
+PAN_PROMPT = """You are an expert at reading Indian PAN (Permanent Account Number) cards.
+Extract all text visible on this PAN card and return a JSON object with these fields:
+- doc_type: always "pan"
+- name: Full name of the card holder (all caps, Roman script)
+- father_name: Father's name as printed
+- pan_number: The 10-character PAN (e.g. "ABCDE1234F")
+- dob: Date of birth (e.g. "01/01/1990")
+
+Return ONLY a valid JSON object. Use null for missing fields."""
+
+GENERIC_PROMPT = """You are an expert at reading Indian identity documents.
+Determine if this image is an Aadhaar card or PAN card, then extract all visible fields:
+- doc_type: "aadhaar", "pan", or "unknown"
+- name: Full name
+- aadhaar_number: 12-digit number (if Aadhaar, format: "XXXX XXXX XXXX")
+- pan_number: 10-char PAN (if PAN card, e.g. "ABCDE1234F")
+- father_name: Father's name (if PAN)
+- dob: Date of birth
+- gender: male/female/other (if visible)
+- address: Full address (if Aadhaar)
+- pincode: 6-digit pin (if visible)
+
+Return ONLY a valid JSON object. Use null for missing fields."""
 
 
-def get_reader() -> easyocr.Reader:
-    """Return a singleton EasyOCR reader (loads model on first call)."""
-    global _reader
-    if _reader is None:
-        # English + Hindi — covers all 3 target langs (Marathi uses Devanagari = Hindi model)
-        _reader = easyocr.Reader(["en", "hi"], gpu=False)
-    return _reader
+
+def get_client() -> OpenAI:
+    global _client
+    if _client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY not set")
+        _client = OpenAI(api_key=api_key)
+    return _client
 
 
-def base64_to_image(b64: str) -> np.ndarray:
-    """Convert a base64 data-URL or raw base64 string to a numpy array."""
+def _optimize_image(b64: str, max_size: int = 1024) -> str:
+    """Resize to max_size on its longest edge and re-encode as JPEG to save tokens."""
     if "," in b64:
-        b64 = b64.split(",", 1)[1]
-    img_bytes = base64.b64decode(b64)
-    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-    return np.array(img)
+        prefix, raw = b64.split(",", 1)
+    else:
+        prefix, raw = "data:image/jpeg;base64", b64
+
+    img = Image.open(io.BytesIO(base64.b64decode(raw))).convert("RGB")
+    w, h = img.size
+    if max(w, h) > max_size:
+        ratio = max_size / max(w, h)
+        img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-def base64_to_pil(b64: str) -> Image.Image:
-    if "," in b64:
-        b64 = b64.split(",", 1)[1]
-    return Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB")
+def _call_gpt4o(image_b64: str, prompt: str) -> dict:
+    """Send image + prompt to GPT-4o and parse the returned JSON."""
+    client = get_client()
+    optimized = _optimize_image(image_b64)
 
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": optimized, "detail": "high"},
+                    },
+                ],
+            }
+        ],
+        max_tokens=500,
+        temperature=0,
+    )
 
-def run_ocr(image: np.ndarray) -> list[str]:
-    """Run EasyOCR and return a flat list of detected text lines."""
-    reader = get_reader()
-    results = reader.readtext(image, detail=0, paragraph=False)
-    return [r.strip() for r in results if r.strip()]
+    raw = (response.choices[0].message.content or "").strip()
+    # Strip markdown fences GPT sometimes wraps around JSON
+    raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.MULTILINE)
+    raw = re.sub(r"\s*```$", "", raw, flags=re.MULTILINE)
 
-
-# ─── Regex patterns ──────────────────────────────────────────────────────────
-
-PAN_REGEX = re.compile(r"[A-Z]{5}[0-9]{4}[A-Z]")
-AADHAAR_REGEX = re.compile(r"\b\d{4}\s?\d{4}\s?\d{4}\b")
-DOB_REGEX = re.compile(
-    r"\b(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})\b"
-    r"|\b(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})\b",
-    re.IGNORECASE,
-)
-GENDER_REGEX = re.compile(r"\b(male|female|transgender|पुरुष|महिला|स्त्री)\b", re.IGNORECASE)
-PINCODE_REGEX = re.compile(r"\b\d{6}\b")
-
-
-# ─── Aadhaar Extraction ───────────────────────────────────────────────────────
-
-AADHAAR_INDICATORS = [
-    "uidai", "aadhaar", "aadhar", "unique identification",
-    "government of india", "enrollment", "enrolment",
-]
-
-PAN_INDICATORS = [
-    "income tax", "permanent account", "pan", "govt. of india",
-    "govt of india", "income tax department",
-]
-
-
-def detect_doc_type(lines: list[str]) -> str:
-    text = " ".join(lines).lower()
-    if any(ind in text for ind in PAN_INDICATORS):
-        return "pan"
-    if PAN_REGEX.search(text.upper()):
-        return "pan"
-    if any(ind in text for ind in AADHAAR_INDICATORS):
-        return "aadhaar"
-    if AADHAAR_REGEX.search(text):
-        return "aadhaar"
-    return "unknown"
-
-
-def extract_aadhaar_details(lines: list[str]) -> dict:
-    full_text = "\n".join(lines)
-
-    # Aadhaar number
-    aadhaar_match = AADHAAR_REGEX.search(full_text)
-    aadhaar_number = aadhaar_match.group().replace(" ", "") if aadhaar_match else None
-    if aadhaar_number:
-        # Format as XXXX XXXX XXXX
-        aadhaar_number = f"{aadhaar_number[:4]} {aadhaar_number[4:8]} {aadhaar_number[8:12]}"
-
-    # DOB
-    dob = None
-    dob_match = DOB_REGEX.search(full_text)
-    if dob_match:
-        dob = dob_match.group()
-
-    # Gender
-    gender = None
-    gender_match = GENDER_REGEX.search(full_text)
-    if gender_match:
-        gender = gender_match.group().lower()
-        # Normalize Hindi
-        if gender in ("पुरुष",):
-            gender = "male"
-        elif gender in ("महिला", "स्त्री"):
-            gender = "female"
-
-    # Name: On Aadhaar, name is usually printed in Roman/Devanagari
-    # Heuristic: first alphabetic-only line that isn't a label
-    skip_keywords = {
-        "uidai", "government", "india", "aadhaar", "aadhar", "male", "female",
-        "dob", "year", "address", "enrollment", "district", "state", "pin",
-        "पुरुष", "महिला", "भारत", "आधार",
-    }
-    name = None
-    for line in lines:
-        clean = line.strip()
-        if (
-            3 < len(clean) < 50
-            and re.match(r"^[A-Za-z\u0900-\u097F\s\.]+$", clean)
-            and not any(kw in clean.lower() for kw in skip_keywords)
-            and not re.search(r"\d", clean)
-        ):
-            name = clean
-            break
-
-    # Address: lines after a line containing "address" or "पता" or after the Aadhaar number
-    address_lines = []
-    capture = False
-    for line in lines:
-        if re.search(r"\baddress\b|\bपता\b|s/o|w/o|c/o|d/o|house|flat|village|plot", line, re.IGNORECASE):
-            capture = True
-        if capture:
-            address_lines.append(line)
-            if len(address_lines) >= 4:
-                break
-    address = ", ".join(address_lines) if address_lines else None
-
-    # Pincode from address area
-    pincode = None
-    pincode_match = PINCODE_REGEX.search(full_text)
-    if pincode_match:
-        pincode = pincode_match.group()
-
-    return {
-        "doc_type": "aadhaar",
-        "aadhaar_number": aadhaar_number,
-        "name": name,
-        "dob": dob,
-        "gender": gender,
-        "address": address,
-        "pincode": pincode,
-    }
-
-
-def extract_pan_details(lines: list[str]) -> dict:
-    full_text = "\n".join(lines)
-    upper_text = full_text.upper()
-
-    # PAN number
-    pan_match = PAN_REGEX.search(upper_text)
-    pan_number = pan_match.group() if pan_match else None
-
-    # DOB on PAN
-    dob = None
-    dob_match = DOB_REGEX.search(full_text)
-    if dob_match:
-        dob = dob_match.group()
-
-    # Name on PAN: appears after the "Name" label
-    name = None
-    father_name = None
-    for i, line in enumerate(lines):
-        if re.search(r"\bname\b", line, re.IGNORECASE) and i + 1 < len(lines):
-            candidate = lines[i + 1].strip()
-            if re.match(r"^[A-Z\s\.]{2,}$", candidate.upper()):
-                if name is None:
-                    name = candidate
-                elif father_name is None:
-                    father_name = candidate
-
-    # Fallback: first ALL-CAPS alphabetic line
-    if name is None:
-        for line in lines:
-            clean = line.strip()
-            if (
-                3 < len(clean) < 50
-                and re.match(r"^[A-Z\s\.]+$", clean)
-                and "INCOME" not in clean
-                and "GOVERNMENT" not in clean
-                and "PERMANENT" not in clean
-            ):
-                name = clean
-                break
-
-    return {
-        "doc_type": "pan",
-        "pan_number": pan_number,
-        "name": name,
-        "father_name": father_name,
-        "dob": dob,
-    }
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        if match:
+            return json.loads(match.group())
+        return {"doc_type": "unknown", "error": "failed to parse GPT-4o response"}
 
 
 def extract_document(image_b64: str) -> dict:
-    """Main entry: detect document type and extract all fields."""
-    img = base64_to_image(image_b64)
-    lines = run_ocr(img)
-    doc_type = detect_doc_type(lines)
+    """
+    Main entry — extract all fields from an Aadhaar or PAN card using GPT-4o Vision.
+    A generic call first determines doc type; then a specialized prompt is used for
+    higher accuracy.
+    """
+    # First pass: detect doc type
+    result = _call_gpt4o(image_b64, GENERIC_PROMPT)
+    doc_type = result.get("doc_type", "unknown")
 
+    # Second pass with specialized prompt for better field accuracy
     if doc_type == "aadhaar":
-        result = extract_aadhaar_details(lines)
+        result = _call_gpt4o(image_b64, AADHAAR_PROMPT)
     elif doc_type == "pan":
-        result = extract_pan_details(lines)
-    else:
-        result = {"doc_type": "unknown"}
+        result = _call_gpt4o(image_b64, PAN_PROMPT)
 
-    result["raw_text"] = lines
-    result["confidence"] = _estimate_confidence(lines, doc_type)
+    # Normalize Aadhaar number spacing
+    aadhaar_raw = result.get("aadhaar_number")
+    if aadhaar_raw:
+        digits = re.sub(r"\D", "", str(aadhaar_raw))
+        if len(digits) == 12:
+            result["aadhaar_number"] = f"{digits[:4]} {digits[4:8]} {digits[8:12]}"
+
+    # Normalize PAN to uppercase, no spaces
+    pan_raw = result.get("pan_number")
+    if pan_raw:
+        result["pan_number"] = re.sub(r"\s", "", str(pan_raw)).upper()
+
+    result["confidence"] = _estimate_confidence(result)
+    result["raw_text"] = []  # GPT doesn't return raw lines; kept for schema compat
     return result
 
 
-def _estimate_confidence(lines: list[str], doc_type: str) -> int:
-    """Simple confidence heuristic based on how many key fields were detected."""
+def _estimate_confidence(data: dict) -> int:
+    doc_type = data.get("doc_type", "unknown")
     if doc_type == "unknown":
         return 0
-    full = " ".join(lines).lower()
-    hits = 0
-    if doc_type == "aadhaar":
-        checks = ["uidai", "aadhaar", r"\d{4}\s?\d{4}\s?\d{4}"]
-    else:
-        checks = ["income tax", "permanent account", r"[A-Z]{5}\d{4}[A-Z]"]
-    for c in checks:
-        if re.search(c, full, re.IGNORECASE):
-            hits += 1
-    return min(60 + hits * 13, 95)
+    fields = ["name", "aadhaar_number", "dob", "gender"] if doc_type == "aadhaar" else ["name", "pan_number", "dob"]
+    filled = sum(1 for f in fields if data.get(f))
+    return min(60 + int((filled / len(fields)) * 35), 95)
