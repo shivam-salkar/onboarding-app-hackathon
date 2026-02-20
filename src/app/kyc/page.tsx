@@ -338,10 +338,10 @@ export default function KycPage() {
               <div key={s} className="flex items-center gap-2">
                 <div
                   className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${isActive
-                      ? 'bg-primary/20 ring-2 ring-primary'
-                      : isDone
-                        ? 'bg-glow-teal/20'
-                        : 'bg-black/5'
+                    ? 'bg-primary/20 ring-2 ring-primary'
+                    : isDone
+                      ? 'bg-glow-teal/20'
+                      : 'bg-black/5'
                     }`}
                 >
                   {isDone ? (
@@ -588,10 +588,10 @@ export default function KycPage() {
                         <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
                       )}
                       <p className={`text-sm font-medium ${matchStatus === 'success'
-                          ? 'text-glow-teal'
-                          : matchStatus === 'partial'
-                            ? 'text-yellow-600'
-                            : 'text-red-500'
+                        ? 'text-glow-teal'
+                        : matchStatus === 'partial'
+                          ? 'text-yellow-600'
+                          : 'text-red-500'
                         }`}>
                         {matchStatus === 'success'
                           ? t('kyc.matchSuccess')
@@ -666,10 +666,10 @@ export default function KycPage() {
                 {faceStatus && (
                   <GlassCard
                     className={`w-full mb-4 ${faceStatus === 'detected'
-                        ? 'ring-1 ring-glow-teal/50'
-                        : faceStatus === 'not_detected'
-                          ? 'ring-1 ring-red-400/30'
-                          : ''
+                      ? 'ring-1 ring-glow-teal/50'
+                      : faceStatus === 'not_detected'
+                        ? 'ring-1 ring-red-400/30'
+                        : ''
                       }`}
                   >
                     <div className="flex items-center gap-3">
@@ -681,10 +681,10 @@ export default function KycPage() {
                         <CheckCircle2 className="w-5 h-5 text-yellow-500 flex-shrink-0" />
                       )}
                       <p className={`text-sm font-medium ${faceStatus === 'detected'
-                          ? 'text-glow-teal'
-                          : faceStatus === 'not_detected'
-                            ? 'text-red-500'
-                            : 'text-yellow-600'
+                        ? 'text-glow-teal'
+                        : faceStatus === 'not_detected'
+                          ? 'text-red-500'
+                          : 'text-yellow-600'
                         }`}>
                         {faceStatus === 'detected'
                           ? t('kyc.faceDetected')
