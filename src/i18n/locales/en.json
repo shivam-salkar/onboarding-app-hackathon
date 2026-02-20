@@ -38,19 +38,48 @@
     "editing": "Editing"
   },
   "kyc": {
-    "title": "Video KYC Preparation",
-    "subtitle": "Complete these steps before your video call",
+    "title": "Document KYC Verification",
+    "subtitle": "Verify your identity with your camera",
+    "startBtn": "Start KYC Verification",
+    "step": "Step {{current}} of {{total}}",
     "steps": {
-      "lighting": "Ensure you are in a well-lit area",
-      "document": "Keep your PAN card and Aadhaar handy",
-      "internet": "Use a stable internet connection",
-      "speak": "Speak clearly when prompted by the agent"
+      "document": "Capture ID Document",
+      "documentDesc": "Place your PAN card or Aadhaar in the frame and capture a clear photo",
+      "ocr": "Verifying Document",
+      "ocrDesc": "Extracting and validating information from your document",
+      "selfie": "Take a Selfie",
+      "selfieDesc": "Switch to front camera and take a clear selfie for face verification",
+      "result": "Verification Result"
     },
-    "start": "Start Video KYC",
-    "complete": "Onboarding Complete!",
-    "completeMsg": "Your video KYC session has been initiated. A bank representative will connect with you shortly.",
+    "capture": "Capture Photo",
+    "retake": "Retake Photo",
+    "switchCamera": "Switch Camera",
+    "analyzing": "Analyzing image quality...",
+    "processing": "Processing document... {{progress}}%",
+    "qualityIssue": {
+      "blur": "Image is too blurry. Please retake with a steady hand.",
+      "dark": "Image is too dark. Move to a well-lit area.",
+      "bright": "Image is too bright. Avoid direct light on the document."
+    },
+    "docDetected": "{{type}} card detected",
+    "docNotDetected": "Could not identify document type. Please try again with a clearer image.",
+    "idExtracted": "ID Number: {{id}}",
+    "nameExtracted": "Name: {{name}}",
+    "matchSuccess": "Document details match your onboarding data!",
+    "matchPartial": "Partial match found. Please verify the details.",
+    "noMatch": "Document does not match onboarding data. Please try with the correct document.",
+    "faceDetected": "Face detected successfully",
+    "faceNotDetected": "No face detected. Please position your face clearly in the frame.",
+    "faceSkipped": "Face detection not supported on this browser. Proceeding.",
+    "approved": "KYC Approved!",
+    "approvedMsg": "Your identity has been verified successfully. Your onboarding is complete.",
+    "rejected": "Verification Failed",
+    "rejectedMsg": "We could not verify your identity. Please try again.",
+    "tryAgain": "Try Again",
     "close": "Close",
-    "step": "Step {{current}} of {{total}}"
+    "confirm": "Confirm & Continue",
+    "captureSelfie": "Capture Selfie",
+    "viewAuditLog": "View Audit Log"
   },
   "languages": {
     "en": "English",

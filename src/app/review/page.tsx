@@ -125,7 +125,7 @@ export default function ReviewPage() {
                         </p>
                       </div>
                       <button
-                        onClick={() => setEditingField(key as FieldKey)}
+                        onClick={() => setEditingField(fieldKey)}
                         className="ml-3 w-12 h-12 rounded-full bg-black/5 flex items-center justify-center hover:bg-black/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-glow-teal min-h-[48px] min-w-[48px]"
                         aria-label={`Edit ${t(`onboarding.fields.${fieldKey}`)}`}
                       >

@@ -10,6 +10,7 @@ interface SpeechRecognitionResult {
   error: string | null;
   start: () => void;
   stop: () => void;
+  clearTranscript: () => void;
 }
 
 const langMap: Record<string, string> = {
