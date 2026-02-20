@@ -1,26 +1,179 @@
 @import "tailwindcss";
 
+/* ===== THEME CSS CUSTOM PROPERTIES ===== */
+/* Default: ICICI theme (Light) — overridden at runtime by ThemeProvider */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --primary: #f37021;
+  --primary-light: #ff8c42;
+  --secondary: #003366;
+  --accent: #f37021;
+  --bg-start: #fff4e6;
+  --bg-end: #ffffff;
+  --card-bg: rgba(255, 255, 255, 0.45);
+  --card-border: rgba(243, 112, 33, 0.2);
+  --glow-teal: #2dd4bf;
+  --glow-purple: #a78bfa;
+  --text-primary: #1f2937;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-primary: var(--primary);
+  --color-primary-light: var(--primary-light);
+  --color-secondary: var(--secondary);
+  --color-accent: var(--accent);
+  --color-glow-teal: var(--glow-teal);
+  --color-glow-purple: var(--glow-purple);
+  --color-card-bg: var(--card-bg);
+  --color-card-border: var(--card-border);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --font-sans: var(--font-dm-sans);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ===== GLOBAL STYLES ===== */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* Moving Wavy Gradient Background */
+  background: linear-gradient(
+    -45deg,
+    var(--bg-start),
+    #ffffff,
+    var(--bg-end),
+    #ffffff
+  );
+  background-size: 400% 400%;
+  animation: gradient-wave 15s ease infinite;
+
+  color: var(--text-primary);
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+/* ===== GLASSMORPHISM BACKGROUND BLOBS ===== */
+/* Made softer and lighter for light theme */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.15;
+  z-index: 0;
+  pointer-events: none;
+}
+
+body::before {
+  width: 500px;
+  height: 500px;
+  background: var(--primary); /* Use primary theme color */
+  top: -150px;
+  right: -100px;
+  opacity: 0.1;
+}
+
+body::after {
+  width: 400px;
+  height: 400px;
+  background: var(--secondary); /* Use secondary theme color */
+  bottom: -100px;
+  left: -100px;
+  opacity: 0.08;
+}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 999px;
+}
+
+/* ===== SELECTION ===== */
+::selection {
+  background: var(--primary);
+  color: white;
+}
+
+/* ===== ANIMATIONS ===== */
+@keyframes gradient-wave {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* ===== GLOW KEYFRAMES ===== */
+@keyframes glow-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 15px rgba(13, 148, 136, 0.2),
+      0 0 30px rgba(124, 58, 237, 0.1);
+  }
+  50% {
+    box-shadow:
+      0 0 25px rgba(13, 148, 136, 0.3),
+      0 0 45px rgba(124, 58, 237, 0.15);
+  }
+}
+
+@keyframes orb-idle {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+@keyframes ring-expand {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.4;
+    border-color: var(--primary);
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+    border-color: var(--primary);
+  }
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+.animate-orb-idle {
+  animation: orb-idle 3s ease-in-out infinite;
+}
+
+.glass {
+  background: var(--card-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--card-border);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03); /* Subtle drop shadow for depth in light mode */
 }

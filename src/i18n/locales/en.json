@@ -1,0 +1,60 @@
+{
+  "gatekeeper": {
+    "title": "Welcome to Smart Onboarding",
+    "subtitle": "Select your bank and preferred language to begin",
+    "selectBank": "Choose Your Bank",
+    "selectLanguage": "Choose Language",
+    "begin": "Begin Onboarding",
+    "poweredBy": "Powered by AI Voice Agent"
+  },
+  "onboarding": {
+    "title": "Voice Onboarding",
+    "subtitle": "Tap the orb and speak naturally",
+    "aiPrompts": {
+      "name": "Please tell me your full name",
+      "dob": "What is your date of birth?",
+      "pan": "Please share your PAN number",
+      "aadhaar": "What is your Aadhaar number?",
+      "done": "All details captured! Please review."
+    },
+    "fields": {
+      "name": "Full Name",
+      "dob": "Date of Birth",
+      "pan": "PAN Number",
+      "aadhaar": "Aadhaar Number"
+    },
+    "listening": "Listening...",
+    "tapToSpeak": "Tap to speak",
+    "review": "Review Details",
+    "transcript": "Live transcript"
+  },
+  "review": {
+    "title": "Review Your Details",
+    "subtitle": "Tap any field to edit manually",
+    "save": "Save",
+    "cancel": "Cancel",
+    "proceed": "Proceed to Video KYC",
+    "back": "Back to AI Agent",
+    "editing": "Editing"
+  },
+  "kyc": {
+    "title": "Video KYC Preparation",
+    "subtitle": "Complete these steps before your video call",
+    "steps": {
+      "lighting": "Ensure you are in a well-lit area",
+      "document": "Keep your PAN card and Aadhaar handy",
+      "internet": "Use a stable internet connection",
+      "speak": "Speak clearly when prompted by the agent"
+    },
+    "start": "Start Video KYC",
+    "complete": "Onboarding Complete!",
+    "completeMsg": "Your video KYC session has been initiated. A bank representative will connect with you shortly.",
+    "close": "Close",
+    "step": "Step {{current}} of {{total}}"
+  },
+  "languages": {
+    "en": "English",
+    "hi": "हिन्दी",
+    "mr": "मराठी"
+  }
+}
