@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
@@ -10,6 +10,8 @@ import { BankId, themes } from '@/lib/themes';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Button } from '@/components/ui/Button';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
+import { VoiceAssistant } from '@/components/ai/VoiceAssistant';
+import { VoiceCommand } from '@/hooks/useVoiceCommands';
 
 const bankList: BankId[] = ['icici', 'sbi', 'axis'];
 
@@ -43,6 +45,33 @@ export default function GatekeeperPage() {
     }
   };
 
+  const voicePromptKey = selected ? 'gatekeeper.voiceSelected' : 'gatekeeper.voicePrompt';
+
+  const voiceCommands: VoiceCommand[] = useMemo(
+    () => [
+      {
+        keywords: ['icici'],
+        action: () => handleSelectBank('icici'),
+      },
+      {
+        keywords: ['sbi', 'state bank'],
+        action: () => handleSelectBank('sbi'),
+      },
+      {
+        keywords: ['axis'],
+        action: () => handleSelectBank('axis'),
+      },
+      {
+        keywords: ['begin', 'start', 'shuru', 'शुरू', 'सुरू'],
+        action: () => {
+          if (selected) router.push('/onboarding');
+        },
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selected],
+  );
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-5 py-10 min-h-[100dvh] relative z-10">
       {/* Header */}
@@ -64,6 +93,15 @@ export default function GatekeeperPage() {
           {t('gatekeeper.subtitle')}
         </p>
       </motion.div>
+
+      {/* Voice Assistant */}
+      <VoiceAssistant
+        promptKey={voicePromptKey}
+        commands={voiceCommands}
+        showTranscript
+        size="sm"
+        className="mb-6"
+      />
 
       {/* Bank Selection */}
       <motion.div

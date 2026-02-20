@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -8,6 +8,8 @@ import { Pencil, Check, X, ArrowLeft } from 'lucide-react';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Button } from '@/components/ui/Button';
 import { useOnboarding, FieldKey } from '@/providers/OnboardingProvider';
+import { VoiceAssistant } from '@/components/ai/VoiceAssistant';
+import { VoiceCommand } from '@/hooks/useVoiceCommands';
 
 const fields: FieldKey[] = ['name', 'dob', 'pan', 'aadhaar'];
 
@@ -38,6 +40,23 @@ export default function ReviewPage() {
 
   const allFilled = fields.every((f) => data[f]);
 
+  const reviewVoiceCommands: VoiceCommand[] = useMemo(
+    () => [
+      {
+        keywords: ['proceed', 'continue', 'kyc', 'next', 'आगे बढ़ें', 'पुढे जा'],
+        action: () => {
+          if (allFilled) router.push('/kyc');
+        },
+      },
+      {
+        keywords: ['back', 'go back', 'return', 'वापस', 'मागे', 'परत'],
+        action: () => router.push('/onboarding'),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allFilled],
+  );
+
   return (
     <div className="flex-1 flex flex-col items-center px-5 py-6 min-h-[100dvh] relative z-10">
       {/* Header */}
@@ -53,6 +72,15 @@ export default function ReviewPage() {
           {t('review.subtitle')}
         </p>
       </motion.div>
+
+      {/* Voice Assistant */}
+      <VoiceAssistant
+        promptKey="review.voicePrompt"
+        commands={reviewVoiceCommands}
+        showTranscript
+        size="sm"
+        className="mb-6 w-full max-w-sm"
+      />
 
       {/* Field Cards */}
       <div className="w-full max-w-sm flex flex-col gap-3 mb-8">

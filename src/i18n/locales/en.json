@@ -5,7 +5,9 @@
     "selectBank": "Choose Your Bank",
     "selectLanguage": "Choose Language",
     "begin": "Begin Onboarding",
-    "poweredBy": "Powered by AI Voice Agent"
+    "poweredBy": "Powered by AI Voice Agent",
+    "voicePrompt": "Welcome! Say the name of your bank to select it, or say 'begin' to start.",
+    "voiceSelected": "Great choice! Say 'begin' when you are ready to start onboarding."
   },
   "onboarding": {
     "title": "Voice Onboarding",
@@ -35,7 +37,8 @@
     "cancel": "Cancel",
     "proceed": "Proceed to Video KYC",
     "back": "Back to AI Agent",
-    "editing": "Editing"
+    "editing": "Editing",
+    "voicePrompt": "Please review your details. Say 'proceed' to continue to KYC, or say 'back' to go back."
   },
   "kyc": {
     "title": "Document KYC Verification",
@@ -79,7 +82,14 @@
     "close": "Close",
     "confirm": "Confirm & Continue",
     "captureSelfie": "Capture Selfie",
-    "viewAuditLog": "View Audit Log"
+    "viewAuditLog": "View Audit Log",
+    "voicePrompts": {
+      "start": "Say 'start' to begin your KYC verification.",
+      "document": "Point your camera at your ID document and say 'capture' to take a photo.",
+      "ocr": "Your document is being processed. Say 'next' to continue or 'retake' to try again.",
+      "selfie": "Position your face in the frame and say 'capture' to take a selfie.",
+      "result": "Your verification is complete. Say 'done' to finish."
+    }
   },
   "languages": {
     "en": "English",

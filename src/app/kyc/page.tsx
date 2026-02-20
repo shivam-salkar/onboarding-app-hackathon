@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -23,6 +23,8 @@ import { useCamera } from '@/hooks/useCamera';
 import { useBlurDetection } from '@/hooks/useBlurDetection';
 import { useDocumentOCR, type OCRResult } from '@/hooks/useDocumentOCR';
 import { useOnboarding } from '@/providers/OnboardingProvider';
+import { VoiceAssistant } from '@/components/ai/VoiceAssistant';
+import { VoiceCommand } from '@/hooks/useVoiceCommands';
 
 type KycStep = 'start' | 'document' | 'ocr' | 'selfie' | 'result';
 
@@ -196,6 +198,107 @@ export default function KycPage() {
     return () => stopCamera();
   }, [stopCamera]);
 
+  // Voice assistant prompt key based on current step
+  const kycVoicePromptKey = `kyc.voicePrompts.${step}`;
+
+  // Voice commands that change based on the current step
+  const kycVoiceCommands: VoiceCommand[] = useMemo(() => {
+    switch (step) {
+      case 'start':
+        return [
+          {
+            keywords: ['start', 'begin', 'shuru', 'शुरू', 'सुरू'],
+            action: () => handleStartKyc(),
+          },
+        ];
+      case 'document':
+        return [
+          {
+            keywords: ['capture', 'photo', 'click', 'कैप्चर', 'फोटो', 'कॅप्चर'],
+            action: () => handleCaptureDocument(),
+          },
+          {
+            keywords: ['switch', 'flip', 'बदलो', 'बदला'],
+            action: () => switchCamera(),
+          },
+        ];
+      case 'ocr':
+        return [
+          {
+            keywords: ['next', 'continue', 'selfie', 'आगे', 'पुढे'],
+            action: () => {
+              if (matchStatus === 'success' || matchStatus === 'partial') {
+                handleProceedToSelfie();
+              }
+            },
+          },
+          {
+            keywords: ['retake', 'again', 'दोबारा', 'पुन्हा'],
+            action: () => handleRetakeDocument(),
+          },
+        ];
+      case 'selfie':
+        return [
+          {
+            keywords: ['capture', 'photo', 'click', 'कैप्चर', 'फोटो', 'कॅप्चर'],
+            action: () => {
+              if (!selfieImage) {
+                handleCaptureSelfie();
+              }
+            },
+          },
+          {
+            keywords: ['confirm', 'continue', 'done', 'पुष्टि', 'पुष्टी'],
+            action: () => {
+              if (selfieImage && (faceStatus === 'detected' || faceStatus === 'skipped')) {
+                handleFinalize();
+              }
+            },
+          },
+          {
+            keywords: ['retake', 'again', 'दोबारा', 'पुन्हा'],
+            action: async () => {
+              if (selfieImage) {
+                setSelfieImage(null);
+                setFaceStatus(null);
+                await startCamera('user');
+              }
+            },
+          },
+        ];
+      case 'result':
+        return [
+          {
+            keywords: ['done', 'close', 'finish', 'बंद', 'बंद करा'],
+            action: () => {
+              if (kycApproved) {
+                handleRestart();
+              }
+            },
+          },
+          {
+            keywords: ['audit', 'log', 'ऑडिट', 'लॉग'],
+            action: () => {
+              if (kycApproved) {
+                router.push('/kyc/admin');
+              }
+            },
+          },
+          {
+            keywords: ['retry', 'again', 'try', 'फिर से', 'पुन्हा'],
+            action: () => {
+              if (!kycApproved) {
+                handleRestart();
+              }
+            },
+          },
+        ];
+      default:
+        return [];
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, matchStatus, selfieImage, faceStatus, kycApproved]);
+
   return (
     <div className="flex-1 flex flex-col items-center px-5 py-6 min-h-[100dvh] relative z-10">
       <canvas ref={canvasRef} className="hidden" />
@@ -209,6 +312,16 @@ export default function KycPage() {
         <h1 className="text-xl font-bold text-text-primary">{t('kyc.title')}</h1>
         <p className="text-xs text-text-secondary mt-1">{t('kyc.subtitle')}</p>
       </motion.div>
+
+      {/* Voice Assistant */}
+      <VoiceAssistant
+        promptKey={kycVoicePromptKey}
+        commands={kycVoiceCommands}
+        commandsEnabled={!isAnalyzing && !isProcessing}
+        showTranscript
+        size="sm"
+        className="mb-4"
+      />
 
       {/* Step Indicator */}
       {step !== 'start' && (
