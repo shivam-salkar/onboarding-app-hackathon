@@ -71,6 +71,9 @@ export default function KycPage() {
   const [faceStatus, setFaceStatus] = useState<'detected' | 'not_detected' | 'skipped' | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [kycApproved, setKycApproved] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [backendResult, setBackendResult] = useState<Record<string, any> | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   const {
     videoRef, canvasRef, isStreaming, error: cameraError,
@@ -183,7 +186,7 @@ export default function KycPage() {
 
     // Run OCR in background but we will mock the result for reliability
     const result = await recognizeDocument(frame);
-    
+
     // Mocking Data: If OCR fails to find a name or ID, we provide fallback demo data.
     const mockResult = {
       ...result,
@@ -254,15 +257,54 @@ export default function KycPage() {
 
   const handleFinalize = useCallback(async () => {
     setStep('result');
-    const aadhaarPassed = matchStatus === 'success' || matchStatus === 'partial';
-    const panPassed = panMatchStatus === 'success' || panMatchStatus === 'partial';
-    const approved =
-      aadhaarPassed &&
-      panPassed &&
-      (faceStatus === 'detected' || faceStatus === 'skipped');
+    setIsVerifying(true);
+
+    let approved = false;
+    let backendData = null;
+
+    // Call the TypeScript backend for real verification if we have all images
+    if (capturedImage && capturedPanImage && selfieImage) {
+      try {
+        const res = await fetch('/api/kyc/full-verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            aadhaar_image: capturedImage,
+            pan_image: capturedPanImage,
+            selfie_image: selfieImage,
+            onboarding_name: onboardingData.name || '',
+            onboarding_dob: onboardingData.dob || '',
+          }),
+        });
+        if (res.ok) {
+          backendData = await res.json();
+          approved = backendData?.approved ?? false;
+          setBackendResult(backendData);
+        }
+      } catch (err) {
+        console.error('Backend verification failed, falling back to client-side check:', err);
+      }
+    }
+
+    // Fallback: client-side check if backend is unreachable
+    if (!backendData) {
+      const aadhaarPassed = matchStatus === 'success' || matchStatus === 'partial';
+      const panPassed = panMatchStatus === 'success' || panMatchStatus === 'partial';
+      approved =
+        aadhaarPassed &&
+        panPassed &&
+        (faceStatus === 'detected' || faceStatus === 'skipped');
+    }
+
+    setIsVerifying(false);
     setKycApproved(approved);
-    await logAudit('final_result', approved ? 'success' : 'failure', { matchStatus, panMatchStatus, faceStatus });
-  }, [matchStatus, panMatchStatus, faceStatus]);
+    await logAudit('final_result', approved ? 'success' : 'failure', {
+      matchStatus,
+      panMatchStatus,
+      faceStatus,
+      backendApproved: backendData?.approved,
+    });
+  }, [matchStatus, panMatchStatus, faceStatus, capturedImage, capturedPanImage, selfieImage, onboardingData]);
 
   const handleRetakeDocument = useCallback(async () => {
     setCapturedImage(null);
@@ -286,6 +328,8 @@ export default function KycPage() {
     setSelfieImage(null);
     setFaceStatus(null);
     setKycApproved(false);
+    setBackendResult(null);
+    setIsVerifying(false);
     setStep('start');
   }, [stopCamera]);
 
@@ -900,9 +944,8 @@ export default function KycPage() {
                       ) : (
                         <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
                       )}
-                      <p className={`text-sm font-medium ${
-                        panMatchStatus === 'success' ? 'text-glow-teal' : 'text-red-500'
-                      }`}>
+                      <p className={`text-sm font-medium ${panMatchStatus === 'success' ? 'text-glow-teal' : 'text-red-500'
+                        }`}>
                         {panMatchStatus === 'success' ? t('kyc.matchSuccess') : t('kyc.noMatch')}
                       </p>
                     </div>
@@ -954,14 +997,25 @@ export default function KycPage() {
                     </div>
                   )}
                 </div>
-                <Button
-                  onClick={handleCaptureSelfie}
-                  disabled={!isStreaming || isAnalyzing}
-                  className="w-full"
-                >
-                  <Camera className="w-5 h-5" />
-                  {t('kyc.captureSelfie')}
-                </Button>
+                <div className="w-full flex gap-3">
+                  <Button
+                    onClick={switchCamera}
+                    variant="secondary"
+                    className="min-w-[56px]"
+                    aria-label={t('kyc.switchCamera')}
+                    disabled={!isStreaming || isAnalyzing}
+                  >
+                    <SwitchCamera className="w-5 h-5" />
+                  </Button>
+                  <Button
+                    onClick={handleCaptureSelfie}
+                    disabled={!isStreaming || isAnalyzing}
+                    className="flex-1"
+                  >
+                    <Camera className="w-5 h-5" />
+                    {t('kyc.captureSelfie')}
+                  </Button>
+                </div>
               </>
             ) : (
               <>
@@ -1037,89 +1091,159 @@ export default function KycPage() {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
           >
-            <motion.div
-              className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${kycApproved ? 'bg-glow-teal/20' : 'bg-red-500/20'
-                }`}
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-            >
-              {kycApproved ? (
-                <ShieldCheck className="w-10 h-10 text-glow-teal" />
-              ) : (
-                <ShieldX className="w-10 h-10 text-red-500" />
-              )}
-            </motion.div>
+            {isVerifying ? (
+              <div className="flex flex-col items-center gap-4">
+                <Loader2 className="w-12 h-12 text-primary animate-spin" />
+                <p className="text-sm text-text-secondary">Running AI Verification...</p>
+              </div>
+            ) : (
+              <>
+                <motion.div
+                  className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${kycApproved ? 'bg-glow-teal/20' : 'bg-red-500/20'}`}
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                >
+                  {kycApproved ? (
+                    <ShieldCheck className="w-10 h-10 text-glow-teal" />
+                  ) : (
+                    <ShieldX className="w-10 h-10 text-red-500" />
+                  )}
+                </motion.div>
 
-            <h2 className="text-xl font-bold text-text-primary mb-2 text-center">
-              {kycApproved ? t('kyc.approved') : t('kyc.rejected')}
-            </h2>
-            <p className="text-sm text-text-secondary mb-8 text-center">
-              {kycApproved ? t('kyc.approvedMsg') : t('kyc.rejectedMsg')}
-            </p>
+                <h2 className="text-xl font-bold text-text-primary mb-2 text-center">
+                  {kycApproved ? t('kyc.approved') : t('kyc.rejected')}
+                </h2>
+                <p className="text-sm text-text-secondary mb-6 text-center">
+                  {kycApproved ? t('kyc.approvedMsg') : t('kyc.rejectedMsg')}
+                </p>
 
-            <div className="w-full flex flex-col gap-3 mb-8">
-              {ocrResult && (
-                <GlassCard>
-                  <div className="flex items-center gap-3">
-                    <ScanLine className="w-5 h-5 text-text-muted flex-shrink-0" />
-                    <div>
-                      <p className="text-xs text-text-muted uppercase tracking-wider">Aadhaar Document</p>
-                      <p className="text-sm font-medium text-text-primary">
-                        {ocrResult.docType !== 'unknown' ? ocrResult.docType.toUpperCase() : 'Unknown'} — Confidence: {Math.round(ocrResult.confidence)}%
-                      </p>
+                <div className="w-full flex flex-col gap-3 mb-8">
+                  {/* Backend-verified Aadhaar details */}
+                  <GlassCard>
+                    <div className="flex items-start gap-3">
+                      <ScanLine className="w-5 h-5 text-text-muted flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-xs text-text-muted uppercase tracking-wider mb-1">Aadhaar</p>
+                        {backendResult?.checks?.aadhaar ? (
+                          <>
+                            <p className="text-sm font-medium text-text-primary">
+                              {backendResult.checks.aadhaar.name || 'Name not extracted'}
+                            </p>
+                            {backendResult.checks.aadhaar.aadhaar_number && (
+                              <p className="text-xs text-text-secondary mt-0.5">
+                                {backendResult.checks.aadhaar.aadhaar_number}
+                              </p>
+                            )}
+                            {backendResult.checks.aadhaar.dob && (
+                              <p className="text-xs text-text-secondary">DOB: {backendResult.checks.aadhaar.dob}</p>
+                            )}
+                            {backendResult.checks.aadhaar.gender && (
+                              <p className="text-xs text-text-secondary capitalize">Gender: {backendResult.checks.aadhaar.gender}</p>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-sm text-text-primary">
+                            {ocrResult?.docType !== 'unknown' ? ocrResult?.docType?.toUpperCase() : 'Processed'}
+                          </p>
+                        )}
+                      </div>
+                      {backendResult?.checks?.aadhaar?.valid !== undefined ? (
+                        backendResult.checks.aadhaar.valid
+                          ? <CheckCircle2 className="w-4 h-4 text-glow-teal flex-shrink-0" />
+                          : <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                      ) : null}
                     </div>
-                  </div>
-                </GlassCard>
-              )}
-              {panOcrResult && (
-                <GlassCard>
-                  <div className="flex items-center gap-3">
-                    <CreditCard className="w-5 h-5 text-text-muted flex-shrink-0" />
-                    <div>
-                      <p className="text-xs text-text-muted uppercase tracking-wider">PAN Document</p>
-                      <p className="text-sm font-medium text-text-primary">
-                        {panOcrResult.docType !== 'unknown' ? panOcrResult.docType.toUpperCase() : 'Unknown'} — Confidence: {Math.round(panOcrResult.confidence)}%
-                      </p>
+                  </GlassCard>
+
+                  {/* Backend-verified PAN details */}
+                  <GlassCard>
+                    <div className="flex items-start gap-3">
+                      <CreditCard className="w-5 h-5 text-text-muted flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-xs text-text-muted uppercase tracking-wider mb-1">PAN</p>
+                        {backendResult?.checks?.pan ? (
+                          <>
+                            <p className="text-sm font-medium text-text-primary">
+                              {backendResult.checks.pan.name || 'Name not extracted'}
+                            </p>
+                            {backendResult.checks.pan.pan_number && (
+                              <p className="text-xs text-text-secondary mt-0.5">
+                                {backendResult.checks.pan.pan_number}
+                              </p>
+                            )}
+                            {backendResult.checks.pan.father_name && (
+                              <p className="text-xs text-text-secondary">Father: {backendResult.checks.pan.father_name}</p>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-sm text-text-primary">
+                            {panOcrResult?.docType !== 'unknown' ? panOcrResult?.docType?.toUpperCase() : 'Processed'}
+                          </p>
+                        )}
+                      </div>
+                      {backendResult?.checks?.pan?.valid !== undefined ? (
+                        backendResult.checks.pan.valid
+                          ? <CheckCircle2 className="w-4 h-4 text-glow-teal flex-shrink-0" />
+                          : <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                      ) : null}
                     </div>
-                  </div>
-                </GlassCard>
-              )}
-              <GlassCard>
-                <div className="flex items-center gap-3">
-                  <UserCheck className="w-5 h-5 text-text-muted flex-shrink-0" />
-                  <div>
-                    <p className="text-xs text-text-muted uppercase tracking-wider">Face Verification</p>
-                    <p className="text-sm font-medium text-text-primary capitalize">
-                      {faceStatus === 'detected'
-                        ? 'Detected'
-                        : faceStatus === 'skipped'
-                          ? 'Skipped (unsupported)'
-                          : 'Not detected'}
-                    </p>
-                  </div>
+                  </GlassCard>
+
+                  {/* Face Match */}
+                  <GlassCard>
+                    <div className="flex items-center gap-3">
+                      <UserCheck className="w-5 h-5 text-text-muted flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-text-muted uppercase tracking-wider">Face Match</p>
+                        <p className="text-sm font-medium text-text-primary">
+                          {backendResult?.checks?.face_match
+                            ? `${backendResult.checks.face_match.verified ? 'Matched' : 'No Match'} — ${backendResult.checks.face_match.confidence}% confidence`
+                            : faceStatus === 'detected' ? 'Detected' : faceStatus === 'skipped' ? 'Skipped (unsupported)' : 'Not detected'}
+                        </p>
+                      </div>
+                      {(backendResult?.checks?.face_match?.verified ?? (faceStatus === 'detected' || faceStatus === 'skipped'))
+                        ? <CheckCircle2 className="w-4 h-4 text-glow-teal flex-shrink-0" />
+                        : <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />}
+                    </div>
+                  </GlassCard>
+
+                  {/* Name Cross-check */}
+                  {backendResult?.checks?.name_cross_check && (
+                    <GlassCard>
+                      <div className="flex items-center gap-3">
+                        <CheckCircle2 className={`w-5 h-5 flex-shrink-0 ${backendResult.checks.name_cross_check.match ? 'text-glow-teal' : 'text-red-400'}`} />
+                        <div>
+                          <p className="text-xs text-text-muted uppercase tracking-wider">Name Cross-check</p>
+                          <p className="text-sm font-medium text-text-primary">
+                            {backendResult.checks.name_cross_check.match ? 'Names match' : 'Name mismatch'} ({backendResult.checks.name_cross_check.similarity_pct}% similarity)
+                          </p>
+                        </div>
+                      </div>
+                    </GlassCard>
+                  )}
                 </div>
-              </GlassCard>
-            </div>
 
-            <div className="w-full flex flex-col gap-3 mt-auto">
-              {kycApproved ? (
-                <>
-                  <Button onClick={() => router.push('/kyc/admin')} variant="secondary" className="w-full">
-                    <ClipboardList className="w-4 h-4" />
-                    {t('kyc.viewAuditLog')}
-                  </Button>
-                  <Button onClick={handleRestart} variant="ghost" className="w-full">
-                    {t('kyc.close')}
-                  </Button>
-                </>
-              ) : (
-                <Button onClick={handleRestart} className="w-full">
-                  <RotateCcw className="w-4 h-4" />
-                  {t('kyc.tryAgain')}
-                </Button>
-              )}
-            </div>
+                <div className="w-full flex flex-col gap-3 mt-auto">
+                  {kycApproved ? (
+                    <>
+                      <Button onClick={() => router.push('/kyc/admin')} variant="secondary" className="w-full">
+                        <ClipboardList className="w-4 h-4" />
+                        {t('kyc.viewAuditLog')}
+                      </Button>
+                      <Button onClick={handleRestart} variant="ghost" className="w-full">
+                        {t('kyc.close')}
+                      </Button>
+                    </>
+                  ) : (
+                    <Button onClick={handleRestart} className="w-full">
+                      <RotateCcw className="w-4 h-4" />
+                      {t('kyc.tryAgain')}
+                    </Button>
+                  )}
+                </div>
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
