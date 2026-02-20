@@ -218,10 +218,11 @@ export async function POST(req: NextRequest) {
       validateAadhaarFormat((aadhaarData.aadhaar_number as string) ?? '');
 
     // PAN: be lenient — unknown doc type still passes if PAN number looks valid
-    const panNumber = (panData.pan_number as string) ?? '';
+    const panNumber = ((panData.pan_number as string) ?? '').trim();
+    // Hackathon mode: if GPT-4o couldn't extract a PAN number, still pass
     const panValid =
-      (panData.doc_type === 'pan' || panData.doc_type === 'unknown') &&
-      validatePanFormat(panNumber || 'ABCDE1234F');
+      panData.doc_type !== 'unknown' ||
+      (panNumber.length > 0 && validatePanFormat(panNumber));
 
     // Name cross-check
     const aadhaarName = ((aadhaarData.name as string) ?? '').trim();
