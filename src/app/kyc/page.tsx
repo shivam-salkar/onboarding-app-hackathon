@@ -16,6 +16,7 @@ import {
   XCircle,
   Loader2,
   ClipboardList,
+  CreditCard,
 } from 'lucide-react';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Button } from '@/components/ui/Button';
@@ -26,13 +27,15 @@ import { useOnboarding } from '@/providers/OnboardingProvider';
 import { VoiceAssistant } from '@/components/ai/VoiceAssistant';
 import { VoiceCommand } from '@/hooks/useVoiceCommands';
 
-type KycStep = 'start' | 'document' | 'ocr' | 'selfie' | 'result';
+type KycStep = 'start' | 'document' | 'ocr' | 'pan' | 'pan_ocr' | 'selfie' | 'result';
 
-const stepOrder: KycStep[] = ['document', 'ocr', 'selfie', 'result'];
+const stepOrder: KycStep[] = ['document', 'ocr', 'pan', 'pan_ocr', 'selfie', 'result'];
 
 const stepIcons: Record<string, React.ElementType> = {
   document: Camera,
   ocr: ScanLine,
+  pan: CreditCard,
+  pan_ocr: ScanLine,
   selfie: UserCheck,
   result: ShieldCheck,
 };
@@ -59,6 +62,11 @@ export default function KycPage() {
   const [qualityIssue, setQualityIssue] = useState<string | null>(null);
   const [ocrResult, setOcrResult] = useState<OCRResult | null>(null);
   const [matchStatus, setMatchStatus] = useState<'success' | 'partial' | 'none' | null>(null);
+  // PAN card step state
+  const [capturedPanImage, setCapturedPanImage] = useState<string | null>(null);
+  const [panQualityIssue, setPanQualityIssue] = useState<string | null>(null);
+  const [panOcrResult, setPanOcrResult] = useState<OCRResult | null>(null);
+  const [panMatchStatus, setPanMatchStatus] = useState<'success' | 'partial' | 'none' | null>(null);
   const [selfieImage, setSelfieImage] = useState<string | null>(null);
   const [faceStatus, setFaceStatus] = useState<'detected' | 'not_detected' | 'skipped' | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -140,6 +148,64 @@ export default function KycPage() {
     });
   }, [captureFrame, analyzeImage, stopCamera, recognizeDocument, onboardingData]);
 
+  const handleProceedToPan = useCallback(async () => {
+    setStep('pan');
+    await startCamera('environment');
+  }, [startCamera]);
+
+  const handleCapturePan = useCallback(async () => {
+    const frame = captureFrame();
+    if (!frame) return;
+    setIsAnalyzing(true);
+    setPanQualityIssue(null);
+
+    const quality = await analyzeImage(frame);
+    await logAudit('document_capture', quality.isAcceptable ? 'success' : 'retry', {
+      sharpnessScore: quality.sharpnessScore,
+      brightnessScore: quality.brightnessScore,
+      qualityIssue: quality.issue,
+      docType: 'pan',
+    });
+
+    if (!quality.isAcceptable) {
+      setPanQualityIssue(quality.issue);
+      setIsAnalyzing(false);
+      return;
+    }
+
+    setCapturedPanImage(frame);
+    stopCamera();
+    setIsAnalyzing(false);
+    setStep('pan_ocr');
+
+    const result = await recognizeDocument(frame);
+    setPanOcrResult(result);
+
+    // Hackathon Mode: auto-pass if any document is detected
+    let status: 'success' | 'none' = 'none';
+    if (result.docType !== 'unknown') {
+      status = 'success';
+    }
+    setPanMatchStatus(status);
+
+    await logAudit('ocr_validation', status === 'success' ? 'success' : 'failure', {
+      docType: result.docType,
+      extractedId: result.extractedId,
+      matchResult: status === 'success',
+      ocrConfidence: result.confidence,
+      cardType: 'pan',
+    });
+  }, [captureFrame, analyzeImage, stopCamera, recognizeDocument]);
+
+  const handleRetakePan = useCallback(async () => {
+    setCapturedPanImage(null);
+    setPanQualityIssue(null);
+    setPanOcrResult(null);
+    setPanMatchStatus(null);
+    setStep('pan');
+    await startCamera('environment');
+  }, [startCamera]);
+
   const handleProceedToSelfie = useCallback(async () => {
     setStep('selfie');
     await startCamera('user');
@@ -177,12 +243,15 @@ export default function KycPage() {
 
   const handleFinalize = useCallback(async () => {
     setStep('result');
+    const aadhaarPassed = matchStatus === 'success' || matchStatus === 'partial';
+    const panPassed = panMatchStatus === 'success' || panMatchStatus === 'partial';
     const approved =
-      (matchStatus === 'success' || matchStatus === 'partial') &&
+      aadhaarPassed &&
+      panPassed &&
       (faceStatus === 'detected' || faceStatus === 'skipped');
     setKycApproved(approved);
-    await logAudit('final_result', approved ? 'success' : 'failure', { matchStatus, faceStatus });
-  }, [matchStatus, faceStatus]);
+    await logAudit('final_result', approved ? 'success' : 'failure', { matchStatus, panMatchStatus, faceStatus });
+  }, [matchStatus, panMatchStatus, faceStatus]);
 
   const handleRetakeDocument = useCallback(async () => {
     setCapturedImage(null);
@@ -199,6 +268,10 @@ export default function KycPage() {
     setQualityIssue(null);
     setOcrResult(null);
     setMatchStatus(null);
+    setCapturedPanImage(null);
+    setPanQualityIssue(null);
+    setPanOcrResult(null);
+    setPanMatchStatus(null);
     setSelfieImage(null);
     setFaceStatus(null);
     setKycApproved(false);
@@ -236,16 +309,42 @@ export default function KycPage() {
       case 'ocr':
         return [
           {
-            keywords: ['next', 'continue', 'selfie', 'आगे', 'पुढे'],
+            keywords: ['next', 'continue', 'pan', 'आगे', 'पुढे'],
             action: () => {
               if (matchStatus === 'success' || matchStatus === 'partial') {
-                handleProceedToSelfie();
+                handleProceedToPan();
               }
             },
           },
           {
             keywords: ['retake', 'again', 'दोबारा', 'पुन्हा'],
             action: () => handleRetakeDocument(),
+          },
+        ];
+      case 'pan':
+        return [
+          {
+            keywords: ['capture', 'photo', 'click', 'कैप्चर', 'फोटो', 'कॅप्चर'],
+            action: () => handleCapturePan(),
+          },
+          {
+            keywords: ['switch', 'flip', 'बदलो', 'बदला'],
+            action: () => switchCamera(),
+          },
+        ];
+      case 'pan_ocr':
+        return [
+          {
+            keywords: ['next', 'continue', 'selfie', 'आगे', 'पुढे'],
+            action: () => {
+              if (panMatchStatus === 'success' || panMatchStatus === 'partial') {
+                handleProceedToSelfie();
+              }
+            },
+          },
+          {
+            keywords: ['retake', 'again', 'दोबारा', 'पुन्हा'],
+            action: () => handleRetakePan(),
           },
         ];
       case 'selfie':
@@ -308,7 +407,7 @@ export default function KycPage() {
         return [];
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, matchStatus, selfieImage, faceStatus, kycApproved]);
+  }, [step, matchStatus, panMatchStatus, selfieImage, faceStatus, kycApproved]);
 
   return (
     <div className="flex-1 flex flex-col items-center px-5 py-6 min-h-[100dvh] relative z-10">
@@ -619,14 +718,199 @@ export default function KycPage() {
             {!isProcessing && ocrResult && (
               <div className="w-full flex flex-col gap-3 mt-auto">
                 {(matchStatus === 'success' || matchStatus === 'partial') && (
+                  <Button onClick={handleProceedToPan} className="w-full">
+                    <CreditCard className="w-5 h-5" />
+                    Scan PAN Card
+                  </Button>
+                )}
+                <Button
+                  onClick={handleRetakeDocument}
+                  variant={matchStatus === 'none' ? 'primary' : 'secondary'}
+                  className="w-full"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  {t('kyc.retake')}
+                </Button>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* =================== PAN CAPTURE =================== */}
+        {step === 'pan' && (
+          <motion.div
+            key="pan"
+            className="flex-1 flex flex-col items-center w-full max-w-sm"
+            initial={{ opacity: 0, x: 30 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -30 }}
+          >
+            <p className="text-sm font-medium text-text-primary mb-2">PAN Card Verification</p>
+            <p className="text-xs text-text-muted mb-4 text-center">Position your PAN card clearly within the frame and capture.</p>
+
+            <div className="relative w-full aspect-[4/3] rounded-[2rem] overflow-hidden mb-4 bg-black/10">
+              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+              <div className="absolute inset-0 pointer-events-none">
+                <div className="absolute inset-6 border-2 border-white/40 rounded-2xl" />
+                <div className="absolute top-6 left-6 w-6 h-6 border-t-3 border-l-3 border-primary rounded-tl-lg" />
+                <div className="absolute top-6 right-6 w-6 h-6 border-t-3 border-r-3 border-primary rounded-tr-lg" />
+                <div className="absolute bottom-6 left-6 w-6 h-6 border-b-3 border-l-3 border-primary rounded-bl-lg" />
+                <div className="absolute bottom-6 right-6 w-6 h-6 border-b-3 border-r-3 border-primary rounded-br-lg" />
+              </div>
+              {isAnalyzing && (
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                  <div className="text-center">
+                    <Loader2 className="w-8 h-8 text-white animate-spin mx-auto mb-2" />
+                    <p className="text-sm text-white font-medium">{t('kyc.analyzing')}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {cameraError && (
+              <GlassCard className="w-full mb-4">
+                <div className="flex items-center gap-3">
+                  <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                  <p className="text-sm text-red-500">{cameraError}</p>
+                </div>
+              </GlassCard>
+            )}
+
+            {panQualityIssue && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="w-full mb-4"
+              >
+                <GlassCard className="ring-1 ring-red-400/30">
+                  <div className="flex items-center gap-3">
+                    <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                    <p className="text-sm text-red-500 font-medium">
+                      {t(`kyc.qualityIssue.${panQualityIssue}`)}
+                    </p>
+                  </div>
+                </GlassCard>
+              </motion.div>
+            )}
+
+            <div className="w-full flex gap-3 mt-auto">
+              <Button
+                onClick={switchCamera}
+                variant="secondary"
+                className="min-w-[56px]"
+                aria-label={t('kyc.switchCamera')}
+              >
+                <SwitchCamera className="w-5 h-5" />
+              </Button>
+              <Button
+                onClick={handleCapturePan}
+                disabled={!isStreaming || isAnalyzing}
+                className="flex-1"
+              >
+                <CreditCard className="w-5 h-5" />
+                Capture PAN
+              </Button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* =================== PAN OCR PROCESSING =================== */}
+        {step === 'pan_ocr' && (
+          <motion.div
+            key="pan_ocr"
+            className="flex-1 flex flex-col items-center w-full max-w-sm"
+            initial={{ opacity: 0, x: 30 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -30 }}
+          >
+            <p className="text-sm font-medium text-text-primary mb-2">PAN Card Analysis</p>
+            <p className="text-xs text-text-muted mb-4 text-center">Reviewing your PAN card details.</p>
+
+            {capturedPanImage && (
+              <div className="w-full aspect-[4/3] rounded-[2rem] overflow-hidden mb-4 relative">
+                <img src={capturedPanImage} alt="Captured PAN card" className="w-full h-full object-cover" />
+                {isProcessing && (
+                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                    <div className="text-center">
+                      <Loader2 className="w-8 h-8 text-white animate-spin mx-auto mb-2" />
+                      <p className="text-sm text-white font-medium">
+                        {t('kyc.processing', { progress })}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {panOcrResult && !isProcessing && (
+              <div className="w-full flex flex-col gap-3 mb-4">
+                <GlassCard
+                  className={panOcrResult.docType !== 'unknown' ? 'ring-1 ring-glow-teal/50' : 'ring-1 ring-red-400/30'}
+                >
+                  <div className="flex items-center gap-3">
+                    {panOcrResult.docType !== 'unknown' ? (
+                      <CheckCircle2 className="w-5 h-5 text-glow-teal flex-shrink-0" />
+                    ) : (
+                      <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                    )}
+                    <p className={`text-sm font-medium ${panOcrResult.docType !== 'unknown' ? 'text-glow-teal' : 'text-red-500'}`}>
+                      {panOcrResult.docType !== 'unknown'
+                        ? t('kyc.docDetected', { type: panOcrResult.docType.toUpperCase() })
+                        : t('kyc.docNotDetected')}
+                    </p>
+                  </div>
+                </GlassCard>
+
+                {panOcrResult.extractedId && (
+                  <GlassCard>
+                    <p className="text-xs text-text-muted uppercase tracking-wider mb-1">Extracted Info</p>
+                    <p className="text-sm font-medium text-text-primary">
+                      {t('kyc.idExtracted', { id: panOcrResult.extractedId })}
+                    </p>
+                    {panOcrResult.extractedName && (
+                      <p className="text-sm text-text-secondary mt-1">
+                        {t('kyc.nameExtracted', { name: panOcrResult.extractedName })}
+                      </p>
+                    )}
+                  </GlassCard>
+                )}
+
+                {panMatchStatus && (
+                  <GlassCard
+                    className={
+                      panMatchStatus === 'success'
+                        ? 'ring-1 ring-glow-teal/50'
+                        : 'ring-1 ring-red-400/30'
+                    }
+                  >
+                    <div className="flex items-center gap-3">
+                      {panMatchStatus === 'success' ? (
+                        <CheckCircle2 className="w-5 h-5 text-glow-teal flex-shrink-0" />
+                      ) : (
+                        <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                      )}
+                      <p className={`text-sm font-medium ${
+                        panMatchStatus === 'success' ? 'text-glow-teal' : 'text-red-500'
+                      }`}>
+                        {panMatchStatus === 'success' ? t('kyc.matchSuccess') : t('kyc.noMatch')}
+                      </p>
+                    </div>
+                  </GlassCard>
+                )}
+              </div>
+            )}
+
+            {!isProcessing && panOcrResult && (
+              <div className="w-full flex flex-col gap-3 mt-auto">
+                {panMatchStatus === 'success' && (
                   <Button onClick={handleProceedToSelfie} className="w-full">
                     <UserCheck className="w-5 h-5" />
                     {t('kyc.captureSelfie')}
                   </Button>
                 )}
                 <Button
-                  onClick={handleRetakeDocument}
-                  variant={matchStatus === 'none' ? 'primary' : 'secondary'}
+                  onClick={handleRetakePan}
+                  variant={panMatchStatus === 'none' ? 'primary' : 'secondary'}
                   className="w-full"
                 >
                   <RotateCcw className="w-4 h-4" />
@@ -769,9 +1053,22 @@ export default function KycPage() {
                   <div className="flex items-center gap-3">
                     <ScanLine className="w-5 h-5 text-text-muted flex-shrink-0" />
                     <div>
-                      <p className="text-xs text-text-muted uppercase tracking-wider">Document</p>
+                      <p className="text-xs text-text-muted uppercase tracking-wider">Aadhaar Document</p>
                       <p className="text-sm font-medium text-text-primary">
                         {ocrResult.docType !== 'unknown' ? ocrResult.docType.toUpperCase() : 'Unknown'} — Confidence: {Math.round(ocrResult.confidence)}%
+                      </p>
+                    </div>
+                  </div>
+                </GlassCard>
+              )}
+              {panOcrResult && (
+                <GlassCard>
+                  <div className="flex items-center gap-3">
+                    <CreditCard className="w-5 h-5 text-text-muted flex-shrink-0" />
+                    <div>
+                      <p className="text-xs text-text-muted uppercase tracking-wider">PAN Document</p>
+                      <p className="text-sm font-medium text-text-primary">
+                        {panOcrResult.docType !== 'unknown' ? panOcrResult.docType.toUpperCase() : 'Unknown'} — Confidence: {Math.round(panOcrResult.confidence)}%
                       </p>
                     </div>
                   </div>
