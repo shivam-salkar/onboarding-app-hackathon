@@ -1,0 +1,18 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+python-dotenv==1.0.1
+httpx==0.27.2
+Pillow==11.0.0
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+
+# OCR — EasyOCR handles Hindi/Marathi + English better than Tesseract
+easyocr==1.7.2
+
+# Face matching — DeepFace works locally, no API key needed
+deepface==0.0.93
+tf-keras==2.18.0
+
+# Optional: Surepass government PAN/Aadhaar verification (set token in .env)
+# No extra package needed — uses httpx
