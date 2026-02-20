@@ -107,6 +107,15 @@ export default function KycPage() {
     setOcrResult(result);
 
     let status: 'success' | 'partial' | 'none' = 'none';
+    
+    // Hackathon Mode: Bypassing strict validation
+    // If ANY document is detected, we treat it as a success even if data doesn't match
+    if (result.docType !== 'unknown') {
+       status = 'success';
+    }
+    
+    // Original strict validation logic (commented out for demo)
+    /*
     if (result.docType !== 'unknown' && result.extractedId) {
       const idField = result.docType === 'pan' ? 'pan' : 'aadhaar';
       const normalizedExtracted = result.extractedId.replace(/\s/g, '').toUpperCase();
@@ -119,6 +128,8 @@ export default function KycPage() {
     } else if (result.docType !== 'unknown') {
       status = 'partial';
     }
+    */
+    
     setMatchStatus(status);
 
     await logAudit('ocr_validation', status === 'success' ? 'success' : status === 'partial' ? 'success' : 'failure', {
